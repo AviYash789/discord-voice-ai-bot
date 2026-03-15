@@ -2,6 +2,7 @@ import asyncio
 import time
 import numpy as np
 from discord.ext import voice_recv
+import discord.opus as opus_lib
 
 SILENCE_THRESHOLD = 500
 MIN_SPEECH_DURATION = 0.5
@@ -13,9 +14,10 @@ class SpeechSink(voice_recv.AudioSink):
         self.on_speech = on_speech_callback
         self._buffers = {}
         self._last_audio = {}
+        self._decoders = {}
 
     def wants_opus(self) -> bool:
-        return False
+        return True
 
     def write(self, user, data: voice_recv.VoiceData):
         if user is None or user.bot:
@@ -26,8 +28,16 @@ class SpeechSink(voice_recv.AudioSink):
         if uid not in self._buffers:
             self._buffers[uid] = bytearray()
             self._last_audio[uid] = now
+            self._decoders[uid] = opus_lib.Decoder()
 
-        pcm = data.pcm
+        try:
+            raw = data.data if data.data else getattr(data, 'opus', None)
+            if not raw:
+                return
+            pcm = self._decoders[uid].decode(raw, fec=False)
+        except Exception:
+            return
+
         if not pcm:
             return
 
@@ -54,3 +64,4 @@ class SpeechSink(voice_recv.AudioSink):
     def cleanup(self):
         self._buffers.clear()
         self._last_audio.clear()
+        self._decoders.clear()
